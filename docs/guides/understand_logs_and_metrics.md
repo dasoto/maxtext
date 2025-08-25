@@ -167,7 +167,7 @@ As a background, **model FLOPs** are the floating point operations to perform mo
 - We breakdown the FLOPs into two parts:
   - "Learnable weight FLOPs" are matmuls between activations and learnable weights. Specifically, this occurs in embedding, feed forward networks, attention-related projections, and unembedding.
   - "Attention FLOPs" are matmuls in attention score computation like $\mathrm{softmax}{\left(\frac{QK^\top}{\sqrt{d}}\right)} V$. 
-- More information can be found in the [Performance Metrics](https://github.com/AI-Hypercomputer/maxtext/blob/main/getting_started/Performance_Metrics.md) page.
+- More information can be found in the [Performance Metrics](https://github.com/AI-Hypercomputer/maxtext/blob/main/docs/guides/performance_metrics.md) page.
 
 One **TFLOP** (TeraFLOP) is equal to $10^{12}$ FLOPs. The log shows the theoretical estimate of **model TFLOP per device**:
 ```
