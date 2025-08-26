@@ -35,7 +35,7 @@ MaxText builds its configuration in layers.
   ...
   Updating keys from model: ['base_emb_dim', 'base_num_query_heads', 'base_num_kv_heads', 'base_mlp_dim', 'base_moe_mlp_dim', 'base_num_decoder_layers', 'first_num_dense_layers', 'mlp_activations', 'vocab_size', 'enable_dropout', 'logits_via_embedding', 'normalization_layer_epsilon', 'num_experts', 'num_experts_per_tok', 'shared_experts', 'routed_scaling_factor', 'routed_score_func', 'routed_bias', 'decoder_block', 'attention_type', 'q_lora_rank', 'kv_lora_rank', 'qk_nope_head_dim', 'qk_rope_head_dim', 'v_head_dim', 'rope_type', 'rope_max_timescale', 'max_position_embeddings', 'original_max_position_embeddings', 'rope_factor', 'beta_fast', 'mscale']
   ```
-  Note that you cannot modify a key from both model and command line. 
+  Note that you cannot modify a key from both model config and command line. 
 
 The final, consolidated configuration is printed last.
 ```
@@ -134,7 +134,7 @@ Total memory size: 70.0 GB, Output size: 44.5 GB, Temp size: 25.5 GB, Argument s
 The most important number is `Total memory size: 70.0 GB`. This is the total HBM the TPU device needs to execute the program. Here is a breakdown:
 - `Argument size: 44.5 GB`: This is the memory needed to hold the inputs for your function. This typically includes the batch of data, parameter (master copy), and optimizer state (e.g., momentum).
 - `Output size: 44.5 GB`: This is the space required to store the results of the computation, such as the updated model weights and updated optimizer states.
-- `Temp size: 25.5 GB`: This is the "scratch space" memory. It's used for all the intermediate values created during the forward and backward passes that are discarded once the step is complete. This includes activation (forward pas), gradient (backward pass), and parameter (working copy, if mixed precision).
+- `Temp size: 25.5 GB`: This is the "scratch space" memory. It's used for all the intermediate values created during the forward and backward passes that are discarded once the step is complete. This includes activation (forward pass), gradient (backward pass), and parameter (working copy, if mixed precision).
 - Q: Why it does not sum up? A: Some memory are shared (usually between argument and output).
   - You might notice that the sum of the parts is greater than `70.0 GB (total)`: `44.5 GB (Argument) + 44.5 GB (Output) + 25.5 GB (Temp) = 114.5 GB`. The difference is due to a compiler optimization called memory aliasing. The compiler is smart enough to reuse memory blocks. The true calculation is `Total = Argument + Output + Temp - Aliased`. In our case, the compiler identified `44.5 GB (114.5 GB - 70.0 GB)` of memory that could be safely reused. Mostly likely, it reuses memory for `Argument` and `Output`.
 
@@ -181,14 +181,14 @@ number parameters: 15.933 billion
 
 In this example, given `model=deepseek2-16b`, `per_device_batch_size=1`, `max_target_length=2048` and no gradient accumulation, we have $\text{model tflop per device} \approx 31.86$. 
 - 94.54% of the TFLOPs are attributed to learnable weight and 5.46% are attributed to attention. 
-- As you will see next, this number is important for calculating performace metrics, such as TFLOP/s/device and model flop utilization (MFU).
+- As you will see next, this number is important for calculating performace metrics, such as TFLOP/s/device and Model FLOPs Utilization (MFU).
 
 You can find more information about model FLOPs and MFU in the [Performance Metrics](https://github.com/AI-Hypercomputer/maxtext/blob/main/docs/guides/performance_metrics.md) page.
 
 
 ## 4 Training Metrics
 
-Finally, we are getting to the training steps! In this section, we will introduce performance metrics including TFLOP/s/device, model flop utilization (MFU), and Tokens/s/device (throughput). We will briefly cover learning metrics including loss and total weights.
+Finally, we are getting to the training steps! In this section, we will introduce performance metrics including TFLOP/s/device, MFU, and Tokens/s/device (throughput). We will briefly cover learning metrics including loss and total weights.
 ```
 completed step: 0, seconds: 19.015, TFLOP/s/device: 1.676, Tokens/s/device: 107.703, total_weights: 8192, loss: 12.047
 completed step: 1, seconds: 0.323, TFLOP/s/device: 98.718, Tokens/s/device: 6345.508, total_weights: 8192, loss: 12.047
@@ -222,7 +222,7 @@ As shown in `seconds: 1.012`, $\text{measured step time in seconds} \approx 1.01
 $$\text{tflop/s/device} = \frac{\text{model tflop per device}}{\text{measured step time in seconds}}$$
 
 - Here we have `TFLOP/s/device: 31.496`. Let's try to verify manually: $31.86 /1.012 = 31.482$. Not exactly same but close, since the both tflop and time are rounded in log.
-- Further, we can calculate **Model Flop Utilization (MFU)** from this:
+- Further, we can calculate **Model FLOPs Utilization (MFU)** from this:
   
 $$\text{MFU} = \frac{\text{tflop/s/device}}{\text{peak hardware tflop/s}}$$
   
