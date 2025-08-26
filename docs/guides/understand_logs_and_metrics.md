@@ -24,7 +24,7 @@ MaxText builds its configuration in layers.
   ```
   Updating keys from env and command line: ['run_name', 'model_name', 'enable_checkpointing', 'base_output_directory', 'per_device_batch_size', 'dataset_type', 'steps', 'max_target_length']
   ```
-- It updates parameters based on the **model-specific configuration** file. As you specify `model_name=deepseek2-16b`, it read from [deepseek2-16b.yml](https://github.com/AI-Hypercomputer/maxtext/blob/main/MaxText/configs/models/deepseek2-16b.yml).
+- It updates keys based on the **model-specific configuration** file. As you specify `model_name=deepseek2-16b`, it read from [deepseek2-16b.yml](https://github.com/AI-Hypercomputer/maxtext/blob/main/MaxText/configs/models/deepseek2-16b.yml).
 
   ```
   Running Model: deepseek2-16b
@@ -35,6 +35,7 @@ MaxText builds its configuration in layers.
   ...
   Updating keys from model: ['base_emb_dim', 'base_num_query_heads', 'base_num_kv_heads', 'base_mlp_dim', 'base_moe_mlp_dim', 'base_num_decoder_layers', 'first_num_dense_layers', 'mlp_activations', 'vocab_size', 'enable_dropout', 'logits_via_embedding', 'normalization_layer_epsilon', 'num_experts', 'num_experts_per_tok', 'shared_experts', 'routed_scaling_factor', 'routed_score_func', 'routed_bias', 'decoder_block', 'attention_type', 'q_lora_rank', 'kv_lora_rank', 'qk_nope_head_dim', 'qk_rope_head_dim', 'v_head_dim', 'rope_type', 'rope_max_timescale', 'max_position_embeddings', 'original_max_position_embeddings', 'rope_factor', 'beta_fast', 'mscale']
   ```
+  Note that you cannot modify a key from both model and command line. 
 
 The final, consolidated configuration is printed last.
 ```
@@ -69,7 +70,7 @@ MaxText organizes all of your run's artifacts into a main output directory. The 
 
 Within this base path, MaxText creates several subdirectories for different types of artifacts. Many of these are optional and only created if you enable them with a specific flag.
 * **TensorBoard Logs (`tensorboard/`)**
-    * This is enabled by default for logging metrics.
+    * Flag: `enable_tensorboard=True` (default)
     * Path: `gs://runner-maxtext-logs/demo/tensorboard/`
 
 * **Profiler Traces (`tensorboard/plugins/profile/`)**
@@ -90,15 +91,16 @@ Within this base path, MaxText creates several subdirectories for different type
 
 To generate all optional artifacts in one run, you can set the corresponding flags in the command line, like in the example below.
 ```bash
-# This command enables the profiler, text metrics, config saving, and checkpointing
+# This command enables tensorboard, profiler, text metrics, config saving, and checkpointing
 python3 -m MaxText.train MaxText/configs/base.yml \
 base_output_directory=gs://runner-maxtext-logs run_name=demo2 \
 model_name=deepseek2-16b \
 per_device_batch_size=1 max_target_length=2048 steps=10 dataset_type=synthetic \
+enable_tensorboard=True \
 profiler=xplane skip_first_n_steps_for_profiler=5 profiler_steps=3 \
 gcs_metrics=True \
 save_config_to_gcs=True \
-enable_checkpointing=True
+enable_checkpointing=True 
 ```
 
 ## 2 Environment Info
@@ -167,7 +169,6 @@ As a background, **model FLOPs** are the floating point operations to perform mo
 - We breakdown the FLOPs into two parts:
   - "Learnable weight FLOPs" are matmuls between activations and learnable weights. Specifically, this occurs in embedding, feed forward networks, attention-related projections, and unembedding.
   - "Attention FLOPs" are matmuls in attention score computation like $\mathrm{softmax}{\left(\frac{QK^\top}{\sqrt{d}}\right)} V$. 
-- More information can be found in the [Performance Metrics](https://github.com/AI-Hypercomputer/maxtext/blob/main/docs/guides/performance_metrics.md) page.
 
 One **TFLOP** (TeraFLOP) is equal to $10^{12}$ FLOPs. The log shows the theoretical estimate of **model TFLOP per device**:
 ```
@@ -181,6 +182,8 @@ number parameters: 15.933 billion
 In this example, given `model=deepseek2-16b`, `per_device_batch_size=1`, `max_target_length=2048` and no gradient accumulation, we have $\text{model tflop per device} \approx 31.86$. 
 - 94.54% of the TFLOPs are attributed to learnable weight and 5.46% are attributed to attention. 
 - As you will see next, this number is important for calculating performace metrics, such as TFLOP/s/device and model flop utilization (MFU).
+
+You can find more information about model FLOPs and MFU in the [Performance Metrics](https://github.com/AI-Hypercomputer/maxtext/blob/main/docs/guides/performance_metrics.md) page.
 
 
 ## 4 Training Metrics
@@ -231,11 +234,11 @@ $$\text{MFU} = \frac{\text{tflop/s/device}}{\text{peak hardware tflop/s}}$$
 
 $$\text{token/s/device} = \frac{\text{number of tokens per device}}{\text{measured step time in seconds}}$$
 
-  - The numerator is from [calculate_tokens_training_per_device](https://github.com/AI-Hypercomputer/maxtext/blob/e969faabbb571285a51545530f34d8f0a9f237e9/MaxText/maxtext_utils.py#L151)
+- The numerator is from [calculate_tokens_training_per_device](https://github.com/AI-Hypercomputer/maxtext/blob/e969faabbb571285a51545530f34d8f0a9f237e9/MaxText/maxtext_utils.py#L151)
 
 $$\text{number of tokens per device} = \text{per device batch size} \times \text{max target length}$$
 
-  - Here we have `Tokens/s/device: 2024.558`. Let's try to verify manually: $1 \times 2048 /1.012 = 2023.715$. Not exactly same but close, since the time is rounded in log.
+- Here we have `Tokens/s/device: 2024.558`. Let's try to verify manually: $1 \times 2048 /1.012 = 2023.715$. Not exactly same but close, since the time is rounded in log.
 
 
 ### 4.2 Learning Metrics
@@ -249,4 +252,4 @@ $$\text{number of tokens per device} = \text{per device batch size} \times \text
   completed step: 8, seconds: 0.983, TFLOP/s/device: 32.418, Tokens/s/device: 2083.764, total_weights: 7805, loss: 9.607
   completed step: 9, seconds: 0.983, TFLOP/s/device: 32.397, Tokens/s/device: 2082.441, total_weights: 7100, loss: 9.794
   ```
-- For better convergence, we want to have large total weights. For example, MaxText allows for [packing](https://github.com/AI-Hypercomputer/maxtext/blob/f82ce194c490d668b14574a072a0a630c27bbd6e/MaxText/sequence_packing.py#L39) multiple short sequences into one.
+- For better convergence, we want to have large total weights. For example, MaxText allows for [packing](https://github.com/AI-Hypercomputer/maxtext/blob/f82ce194c490d668b14574a072a0a630c27bbd6e/MaxText/sequence_packing.py#L39) multiple short sequences into one. This is enabled by default with `packing=True` in [base.yml](https://github.com/AI-Hypercomputer/maxtext/blob/eff346c028092c4f4fd421e5c5343308def5de5a/MaxText/configs/base.yml#L454).
