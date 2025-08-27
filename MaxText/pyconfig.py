@@ -24,6 +24,7 @@ import datetime
 
 import jax
 from jax.experimental.compilation_cache import compilation_cache
+from jax.tree_util import register_pytree_node_class
 
 import omegaconf
 
@@ -1170,7 +1171,7 @@ def using_fsdp_and_transpose_parallelism(raw_keys) -> bool:
       or int(raw_keys["dcn_fsdp_transpose_parallelism"]) > 1
   )
 
-
+@register_pytree_node_class
 class HyperParameters:
   """Wrapper class to expose the configuration in a read-only manner."""
 
@@ -1189,6 +1190,14 @@ class HyperParameters:
 
   def get_keys(self):
     return self._config.keys
+  
+
+  def tree_flatten(self):
+    return (), self
+
+  @classmethod
+  def tree_unflatten(cls, aux_data, children):
+    return aux_data
 
 
 def initialize(argv, **kwargs):
