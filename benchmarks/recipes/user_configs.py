@@ -20,22 +20,22 @@ import maxtext_xpk_runner as mxr
 from xpk_configs import XpkClusterConfig
 
 cluster_config = XpkClusterConfig(
-    cluster_name="test-v5e-32-cluster",
-    project="cloud-tpu-cluster",
-    zone="us-south1-a",
-    device_type="v5litepod-32",
+    cluster_name="bodaborg-v6e-256-lcscld-c",
+    project="tpu-prod-env-one-vm",
+    zone="southamerica-west1-a",
+    device_type="v6e-256",
 )
 xpk_path = "~/xpk"
 
 user = os.environ["USER"]
 region = "-".join(cluster_config.zone.split("-")[:-1])
 proxy_image = (
-    f"us-docker.pkg.dev/path/to/{user}/proxy_server"
+    f"us-docker.pkg.dev/cloud-tpu-v2-images-dev/pathways/gke/ksadi/unsanitized_proxy_server_maxtext@sha256:31bdd23a7b3276525b13a1e635dc916aab9f2ac3852b4f3f4e353c2a790bd221"
 )
 server_image = (
-    f"us-docker.pkg.dev/path/to/{user}/server"
+    f"us-docker.pkg.dev/cloud-tpu-v2-images-dev/pathways/gke/ksadi/unsanitized_server_maxtext@sha256:94d107922fc2e88700192742dac7558a12e44328bfc62987717f82fb1bfff1a6"
 )
-colocated_python_image = f"gcr.io/{cluster_config.project}/path/to/{user}/colocated_python_sidecar"
+colocated_python_image = f"gcr.io/cloud-tpu-multipod-dev/ksadi_sidecar_maxtext@sha256:d1d9b88214463447c15945bfd466cdb6ba0d7f1204d7ad0ac17832ad60c9c497"
 runner = f"gcr.io/{cluster_config.project}/{user}_maxtext_latest:latest"
 base_output_directory = f"gs://{user}-{region}/{user}"
 headless = True
