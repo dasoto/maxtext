@@ -15,7 +15,7 @@ per_device_batch_size=24 max_target_length=2048 steps=10 dataset_type=synthetic 
 
 ## 1 Configuration Info
 
-The first section of the log details the final configuration of your run. This is crucial for debugging, as it shows you exactly which parameters were used. 
+The first section of the log details the configuration of your run. This is crucial for debugging, as it shows you exactly which parameters were used. 
 
 MaxText builds its configuration in layers. 
 - It starts with the **default configuration** from the YAML file [base.yml](https://github.com/AI-Hypercomputer/maxtext/blob/main/MaxText/configs/base.yml), as you provide `MaxText/configs/base.yml`. 
@@ -130,20 +130,19 @@ Before executing training, we first perform a "dry run" compilation of a trainin
 ```
 Total memory size: 100.4 GB, Output size: 44.5 GB, Temp size: 55.9 GB, Argument size: 44.5 GB, Host temp size: 0.0 GB.
 ```
-
-The most important number is `Total memory size: 100.4 GB`. This is the total HBM the TPU device needs to execute the program. Here is a breakdown:
-- `Argument size: 44.5 GB`: This is the memory needed to hold the inputs for your function. This typically includes the batch of data, parameter (master copy), and optimizer state (e.g., momentum).
+The most important number is `Total memory size: 100.4 GB`. This is the total High Bandwidth Memory (HBM) the TPU device needs to execute the program. Here is a breakdown:
+- `Argument size: 44.5 GB`: This is the memory needed to hold the inputs for your function. This typically includes the batch of data, parameter (master copy), and optimizer state (e.g., moment).
 - `Output size: 44.5 GB`: This is the space required to store the results of the computation, such as the updated model weights and updated optimizer states.
 - `Temp size: 55.9 GB`: This is the "scratch space" memory. It's used for all the intermediate values created during the forward and backward passes that are discarded once the step is complete. This includes activation (forward pass), gradient (backward pass), and parameter (working copy, if mixed precision).
 - Q: Why it does not sum up? A: Some memory are shared (usually between argument and output).
-  - You might notice that the sum of the parts is greater than `100.4 GB (total)`: `44.5 GB (Argument) + 44.5 GB (Output) + 55.9 GB (Temp) = 144.9 GB`. The difference is due to a compiler optimization called memory aliasing. The compiler is smart enough to reuse memory blocks. The true calculation is `Total = Argument + Output + Temp - Aliased`. In our case, the compiler identified `44.5 GB (144.9 GB - 100.4 GB)` of memory that could be safely reused. Mostly likely, it reuses memory for `Argument` and `Output`.
+  - You might notice that the sum of the parts is greater than `100.4 GB (total)`: `44.5 GB (Argument) + 44.5 GB (Output) + 55.9 GB (Temp) = 144.9 GB`. The difference is due to a compiler optimization called memory aliasing. The compiler is smart enough to reuse memory blocks. The true calculation is `Total = Argument + Output + Temp - Aliased`. In our case, the compiler identified `44.5 GB (144.9 GB - 100.4 GB)` of memory that could be safely reused. Most likely, it reuses memory for `Argument` and `Output`.
 
 In addition, it shows temporary memory used on the host CPU. In this case, `Host temp size: 0.0 GB`, indicating that all the significant memory allocation happens on the accelerator device.
 
 
 ### 3.2 Memory Snapshot 
 
-The previous section is a forecast of memory usage for entire training step, from static analysis of the compiled code. What about the actual memory usage? We now turn to the  snapshot of current usage right after the training state initialization, from a real-time check during execution. 
+The previous section is a forecast of memory usage for entire training step, from static analysis of the compiled code. What about the actual memory usage? We now turn to the snapshot of current usage right after the training state initialization, from a real-time check during execution. 
 
 To set stage for training, we first initialize the training state, which include parameter and optimizer states. At the [beginning](https://github.com/AI-Hypercomputer/maxtext/blob/f82ce194c490d668b14574a072a0a630c27bbd6e/MaxText/train.py#L695), the log shows a real-time snapshot of the [memory statistics](https://github.com/AI-Hypercomputer/maxtext/blob/f82ce194c490d668b14574a072a0a630c27bbd6e/MaxText/max_utils.py#L708-L717) on your TPU devices.
 
@@ -156,14 +155,14 @@ Memstats: After params initialized:
 	Using (GB) 44.63 / 95.74 (46.615835%) on TPU_2(process=0,(0,1,0,0))
 	Using (GB) 44.63 / 95.74 (46.615835%) on TPU_3(process=0,(1,1,0,0))
 ```
-This log shows that each of the four TPUs has `95.74 GB` of available High Bandwidth Memory (HBM). The initial training state is evenly distributed devices, with each using the same amount of `44.63 GB`.
+This log shows that each of the four TPUs has `95.74 GB` of available High Bandwidth Memory (HBM). The initial training state is evenly distributed across devices, with each using the same amount of `44.63 GB`.
 
 We also note that `Argument size=44.5GB` from previous analysis is a close prediction of memory usage here.
 
 
 ### 3.3 Model TFLOP Per Device
 
-As a background, **model FLOPs** are the floating point operations to perform model computations. For training, the computation includes a single forward and backward pass. 
+As a background, **model FLOPs** are the floating point operations to perform model computation. For training, the computation includes a single forward and backward pass. 
 - In MaxText, we estimate model FLOPs by summing operations in matrix multiplications (matmuls); see [calculate_tflops_training_per_device](https://github.com/AI-Hypercomputer/maxtext/blob/e969faabbb571285a51545530f34d8f0a9f237e9/MaxText/maxtext_utils.py#L297).
 - It depends on model architecture, input size (batch size, sequence length), and gradient accumulation steps. It does not include optimization operations.
 - We breakdown the FLOPs into two parts:
@@ -177,7 +176,7 @@ Per train step:
  split as 94.54% learnable weight flops and 5.46% attention flops
 ```
 
-In this example, given `model=deepseek2-16b`, `per_device_batch_size=1`, `max_target_length=2048` and no gradient accumulation, we have $\text{model tflop per device} \approx 764.67$. 
+In this example, given `model=deepseek2-16b`, `per_device_batch_size=24`, `max_target_length=2048` and no gradient accumulation, we have $\text{model tflop per device} \approx 764.67$. 
 - 94.54% of the TFLOPs are attributed to learnable weight and 5.46% are attributed to attention. 
 - As you will see next, this number is important for calculating performace metrics, such as TFLOP/s/device and Model FLOPs Utilization (MFU).
 
@@ -200,14 +199,14 @@ completed step: 8, seconds: 5.668, TFLOP/s/device: 134.911, Tokens/s/device: 867
 completed step: 9, seconds: 5.667, TFLOP/s/device: 134.924, Tokens/s/device: 8672.758, total_weights: 196608, loss: 10.374
 ```
 
-Before we dive deep here, recall a few things from previous sections:
+Before we dive deep here, recall a few numbers from previous sections:
 - $\text{max target length} = 2048$, $\text{per device batch size} = 24$
 - $\text{model tflop per device} \approx 764.67$ (rounded), $\text{number of devices} = 4$
 
 
 ### 4.1 Performance Metrics
 
-For the performance indicators, they fluctuate at the beginning, and become stable towards the end. Therefore, we usually read those from the last step. Let's take a closer look at Step 9.
+The performance metrics fluctuate at the beginning, and become stable towards the end. Therefore, we usually read them from the last step. Let's take a closer look at Step 9.
 ```
 completed step: 9, seconds: 5.667, TFLOP/s/device: 134.924, Tokens/s/device: 8672.758, total_weights: 196608, loss: 10.374
 ```
@@ -219,14 +218,14 @@ As shown in `seconds: 5.667`, $\text{measured step time in seconds} \approx 5.66
 
 $$\text{tflop/s/device} = \frac{\text{model tflop per device}}{\text{measured step time in seconds}}$$
 
-- Here we have `TFLOP/s/device: 134.924`. Let's try to verify manually: $764.67 / 5.667 = 134.934$. Not exactly same but close, since the both tflop and time are rounded in log.
+- Here we have `TFLOP/s/device: 134.924`. Let's try to verify manually: $764.67 / 5.667 = 134.934$. Not exactly same but close, since the both tflop and time are rounded in the log.
 - Further, we can calculate **Model FLOPs Utilization (MFU)** from this:
   
 $$\text{MFU} = \frac{\text{tflop/s/device}}{\text{peak hardware tflop/s}}$$
   
   For TPU v5p, $\text{peak hardware tflop/s}=459$. Thus, $134.924 / 459 = 29.40\%$.
 
-**Tokens Per Second Per Device (throughput)**
+**Tokens Per Second Per Device (Throughput)**
 
 -  It is [computed](https://github.com/AI-Hypercomputer/maxtext/blob/e969faabbb571285a51545530f34d8f0a9f237e9/MaxText/metric_logger.py#L197-L199) as
 
@@ -236,18 +235,18 @@ $$\text{token/s/device} = \frac{\text{number of tokens per device}}{\text{measur
 
 $$\text{number of tokens per device} = \text{per device batch size} \times \text{max target length}$$
 
-- Here we have `Tokens/s/device: 8672.758`. Let's try to verify manually: $24 \times 2048 / 5.667 = 8673.372$. Not exactly same but close, since the time is rounded in log.
+- Here we have `Tokens/s/device: 8672.758`. Let's try to verify manually: $24 \times 2048 / 5.667 = 8673.372$. Not exactly same but close, since the time is rounded in the log.
 
 
 ### 4.2 Learning Metrics
 
 **Loss**. The loss is the key indicator of learning progress, which should decrease over time steps. Ideally, we want it to converge to a small value.
 
-**Total Weights**. When discussing the throughput, we have $\text{number of tokens} = \text{per device batch size} \times \text{max target length} \times \text{number of device}$. In data preprocessing, for each sentence, we truncate or pad to max target length. The pad tokens are meaningless and the loss are calculated based on the nonpad tokens. Thus, we monitor $\text{number of nonpad tokens}$, which is shown as [total weights](https://github.com/AI-Hypercomputer/maxtext/blob/f82ce194c490d668b14574a072a0a630c27bbd6e/MaxText/train.py#L307).
-- Here we see `total_weights: 196608` for all steps. This is because we are using `dataset_type=synthetic`, where all sentences are generated with length of `max_target_length=2048`. As a result, there are no padded tokens and total weights = number of tokens. 
-- However, in real dataset, sentences can have variable lengths and total weights < number of tokens. For example, we can set `dataset_type=tfds dataset_path=gs://maxtext-dataset dataset_name='c4/en:3.0.1'`, and will see total weights is smaller than 196608:
+**Total Weights**. When discussing the throughput, we have $\text{number of tokens} = \text{per device batch size} \times \text{max target length} \times \text{number of device}$. There are two types of tokens: real tokens and pad tokens. The pad tokens are placeholders introduced by data preprocessing: We truncate or pad each sentence to max target length. Only real tokens contributes to the learning signal (i.e., loss). Therefore, we monitor $\text{number of real tokens}$, which is shown as [total weights](https://github.com/AI-Hypercomputer/maxtext/blob/f82ce194c490d668b14574a072a0a630c27bbd6e/MaxText/train.py#L307).
+- Here we see `total_weights: 196608` for all steps. This is because we are using `dataset_type=synthetic`, where all sentences are generated with length of `max_target_length=2048`. As a result, there are no pad tokens and total weights = number of tokens. 
+- However, in real datasets, sentences can have variable lengths and total weights < number of tokens. For example, we can set `dataset_type=tfds dataset_path=gs://maxtext-dataset dataset_name='c4/en:3.0.1'`, and will see total weights smaller than `196608`:
   ```
   completed step: 8, seconds: 5.670, TFLOP/s/device: 134.856, Tokens/s/device: 8668.393, total_weights: 163259, loss: 9.596
   completed step: 9, seconds: 5.669, TFLOP/s/device: 134.884, Tokens/s/device: 8670.184, total_weights: 155934, loss: 9.580
   ```
-- For better convergence, we want to have large total weights. For example, MaxText allows for [packing](https://github.com/AI-Hypercomputer/maxtext/blob/f82ce194c490d668b14574a072a0a630c27bbd6e/MaxText/sequence_packing.py#L39) multiple short sequences into one. This is enabled by default with `packing=True` in [base.yml](https://github.com/AI-Hypercomputer/maxtext/blob/eff346c028092c4f4fd421e5c5343308def5de5a/MaxText/configs/base.yml#L454).
+- For better convergence, we want to have large total weights. Towards this end, MaxText allows for [packing](https://github.com/AI-Hypercomputer/maxtext/blob/f82ce194c490d668b14574a072a0a630c27bbd6e/MaxText/sequence_packing.py#L39) multiple short sequences into one. This is enabled by default with `packing=True` in [base.yml](https://github.com/AI-Hypercomputer/maxtext/blob/eff346c028092c4f4fd421e5c5343308def5de5a/MaxText/configs/base.yml#L454).
