@@ -4,13 +4,13 @@
 
 When you run a training job, MaxText produces detailed output logs. This guide shows you how to interpret these logs to understand your configuration and monitor performance.
 
-To start, run a simple pretraining job on a single-host TPU. The logs from this command will be used as an example throughout this guide.
+To start, run a simple pretraining job on a single-host TPU. For instance, we can run the following command on TPU v5p-8. The resulting log will be used as an example throughout this guide. 
 
 ```bash
 python3 -m MaxText.train MaxText/configs/base.yml \
 base_output_directory=gs://runner-maxtext-logs run_name=demo \
 model_name=deepseek2-16b \
-per_device_batch_size=1 max_target_length=2048 steps=10 dataset_type=synthetic enable_checkpointing=false
+per_device_batch_size=24 max_target_length=2048 steps=10 dataset_type=synthetic enable_checkpointing=false
 ```
 
 ## 1 Configuration Info
@@ -48,7 +48,7 @@ Config param base_emb_dim: 2048
 # From command line
 Config param dataset_type: synthetic
 Config param steps: 10
-Config param per_device_batch_size: 1.0
+Config param per_device_batch_size: 24.0
 Config param max_target_length: 2048
 ...
 # Other config behind the scene
@@ -95,7 +95,7 @@ To generate all optional artifacts in one run, you can set the corresponding fla
 python3 -m MaxText.train MaxText/configs/base.yml \
 base_output_directory=gs://runner-maxtext-logs run_name=demo2 \
 model_name=deepseek2-16b \
-per_device_batch_size=1 max_target_length=2048 steps=10 dataset_type=synthetic \
+per_device_batch_size=24 max_target_length=2048 steps=10 dataset_type=synthetic \
 enable_tensorboard=True \
 profiler=xplane skip_first_n_steps_for_profiler=5 profiler_steps=3 \
 gcs_metrics=True \
@@ -108,8 +108,8 @@ enable_checkpointing=True
 Next, the log displays the software and hardware environment for your run. This is useful for verifying your setup and understanding how parallelism is being applied. 
 
 ```
-System Information: Jax Version: 0.7.0
-System Information: Jaxlib Version: 0.7.0
+System Information: Jax Version: 0.7.2.dev20250826
+System Information: Jaxlib Version: 0.7.2.dev20250826
 System Information: Jax Backend: PJRT C API
 TFRT TPU v5
 Num_devices: 4, shape (1, 1, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1)
@@ -128,15 +128,15 @@ Num_devices: 4, shape (1, 1, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1)
 Before executing training, we first perform a "dry run" compilation of a training step to [analyze its memory requirement](https://github.com/AI-Hypercomputer/maxtext/blob/f82ce194c490d668b14574a072a0a630c27bbd6e/MaxText/train.py#L630-L632
 ). The log outputs [memory sizes](https://github.com/AI-Hypercomputer/maxtext/blob/f82ce194c490d668b14574a072a0a630c27bbd6e/MaxText/max_utils.py#L735-L753):
 ```
-Total memory size: 70.0 GB, Output size: 44.5 GB, Temp size: 25.5 GB, Argument size: 44.5 GB, Host temp size: 0.0 GB.
+Total memory size: 100.4 GB, Output size: 44.5 GB, Temp size: 55.9 GB, Argument size: 44.5 GB, Host temp size: 0.0 GB.
 ```
 
-The most important number is `Total memory size: 70.0 GB`. This is the total HBM the TPU device needs to execute the program. Here is a breakdown:
+The most important number is `Total memory size: 100.4 GB`. This is the total HBM the TPU device needs to execute the program. Here is a breakdown:
 - `Argument size: 44.5 GB`: This is the memory needed to hold the inputs for your function. This typically includes the batch of data, parameter (master copy), and optimizer state (e.g., momentum).
 - `Output size: 44.5 GB`: This is the space required to store the results of the computation, such as the updated model weights and updated optimizer states.
-- `Temp size: 25.5 GB`: This is the "scratch space" memory. It's used for all the intermediate values created during the forward and backward passes that are discarded once the step is complete. This includes activation (forward pass), gradient (backward pass), and parameter (working copy, if mixed precision).
+- `Temp size: 55.9 GB`: This is the "scratch space" memory. It's used for all the intermediate values created during the forward and backward passes that are discarded once the step is complete. This includes activation (forward pass), gradient (backward pass), and parameter (working copy, if mixed precision).
 - Q: Why it does not sum up? A: Some memory are shared (usually between argument and output).
-  - You might notice that the sum of the parts is greater than `70.0 GB (total)`: `44.5 GB (Argument) + 44.5 GB (Output) + 25.5 GB (Temp) = 114.5 GB`. The difference is due to a compiler optimization called memory aliasing. The compiler is smart enough to reuse memory blocks. The true calculation is `Total = Argument + Output + Temp - Aliased`. In our case, the compiler identified `44.5 GB (114.5 GB - 70.0 GB)` of memory that could be safely reused. Mostly likely, it reuses memory for `Argument` and `Output`.
+  - You might notice that the sum of the parts is greater than `100.4 GB (total)`: `44.5 GB (Argument) + 44.5 GB (Output) + 55.9 GB (Temp) = 144.9 GB`. The difference is due to a compiler optimization called memory aliasing. The compiler is smart enough to reuse memory blocks. The true calculation is `Total = Argument + Output + Temp - Aliased`. In our case, the compiler identified `44.5 GB (144.9 GB - 100.4 GB)` of memory that could be safely reused. Mostly likely, it reuses memory for `Argument` and `Output`.
 
 In addition, it shows temporary memory used on the host CPU. In this case, `Host temp size: 0.0 GB`, indicating that all the significant memory allocation happens on the accelerator device.
 
@@ -151,12 +151,12 @@ To set stage for training, we first initialize the training state, which include
 number parameters: 15.933 billion
 
 Memstats: After params initialized:
-	Using (GB) 44.6 / 95.74 (46.584500%) on TPU_0(process=0,(0,0,0,0))
-	Using (GB) 44.6 / 95.74 (46.584500%) on TPU_1(process=0,(1,0,0,0))
-	Using (GB) 44.6 / 95.74 (46.584500%) on TPU_2(process=0,(0,1,0,0))
-	Using (GB) 44.6 / 95.74 (46.584500%) on TPU_3(process=0,(1,1,0,0))
+	Using (GB) 44.63 / 95.74 (46.615835%) on TPU_0(process=0,(0,0,0,0))
+	Using (GB) 44.63 / 95.74 (46.615835%) on TPU_1(process=0,(1,0,0,0))
+	Using (GB) 44.63 / 95.74 (46.615835%) on TPU_2(process=0,(0,1,0,0))
+	Using (GB) 44.63 / 95.74 (46.615835%) on TPU_3(process=0,(1,1,0,0))
 ```
-This log shows that each of the four TPUs has `95.74 GB` of available High Bandwidth Memory (HBM). The initial training state is evenly distributed devices, with each using the same amount of `44.6 GB`.
+This log shows that each of the four TPUs has `95.74 GB` of available High Bandwidth Memory (HBM). The initial training state is evenly distributed devices, with each using the same amount of `44.63 GB`.
 
 We also note that `Argument size=44.5GB` from previous analysis is a close prediction of memory usage here.
 
@@ -173,13 +173,11 @@ As a background, **model FLOPs** are the floating point operations to perform mo
 One **TFLOP** (TeraFLOP) is equal to $10^{12}$ FLOPs. The log shows the theoretical estimate of **model TFLOP per device**:
 ```
 Per train step:
-Total TFLOPs: 31.86 
-split as 94.54% learnable weight flops and 5.46% attention flops
-
-number parameters: 15.933 billion
+ Total TFLOPs: 764.67 
+ split as 94.54% learnable weight flops and 5.46% attention flops
 ```
 
-In this example, given `model=deepseek2-16b`, `per_device_batch_size=1`, `max_target_length=2048` and no gradient accumulation, we have $\text{model tflop per device} \approx 31.86$. 
+In this example, given `model=deepseek2-16b`, `per_device_batch_size=1`, `max_target_length=2048` and no gradient accumulation, we have $\text{model tflop per device} \approx 764.67$. 
 - 94.54% of the TFLOPs are attributed to learnable weight and 5.46% are attributed to attention. 
 - As you will see next, this number is important for calculating performace metrics, such as TFLOP/s/device and Model FLOPs Utilization (MFU).
 
@@ -190,30 +188,30 @@ You can find more information about model FLOPs and MFU in the [Performance Metr
 
 Finally, we are getting to the training steps! In this section, we will introduce performance metrics including TFLOP/s/device, MFU, and Tokens/s/device (throughput). We will briefly cover learning metrics including loss and total weights.
 ```
-completed step: 0, seconds: 19.015, TFLOP/s/device: 1.676, Tokens/s/device: 107.703, total_weights: 8192, loss: 12.047
-completed step: 1, seconds: 0.323, TFLOP/s/device: 98.718, Tokens/s/device: 6345.508, total_weights: 8192, loss: 12.047
-completed step: 2, seconds: 1.022, TFLOP/s/device: 31.170, Tokens/s/device: 2003.577, total_weights: 8192, loss: 10.876
-completed step: 3, seconds: 0.699, TFLOP/s/device: 45.558, Tokens/s/device: 2928.446, total_weights: 8192, loss: 9.823
-completed step: 4, seconds: 1.012, TFLOP/s/device: 31.497, Tokens/s/device: 2024.600, total_weights: 8192, loss: 8.767
-completed step: 5, seconds: 1.012, TFLOP/s/device: 31.497, Tokens/s/device: 2024.564, total_weights: 8192, loss: 7.867
-completed step: 6, seconds: 1.012, TFLOP/s/device: 31.494, Tokens/s/device: 2024.384, total_weights: 8192, loss: 7.154
-completed step: 7, seconds: 1.011, TFLOP/s/device: 31.502, Tokens/s/device: 2024.926, total_weights: 8192, loss: 6.616
-completed step: 8, seconds: 1.011, TFLOP/s/device: 31.505, Tokens/s/device: 2025.138, total_weights: 8192, loss: 6.237
-completed step: 9, seconds: 1.012, TFLOP/s/device: 31.496, Tokens/s/device: 2024.558, total_weights: 8192, loss: 5.989
+completed step: 0, seconds: 44.923, TFLOP/s/device: 17.022, Tokens/s/device: 1094.129, total_weights: 196608, loss: 12.038
+completed step: 1, seconds: 0.319, TFLOP/s/device: 2400.734, Tokens/s/device: 154316.608, total_weights: 196608, loss: 12.038
+completed step: 2, seconds: 5.658, TFLOP/s/device: 135.158, Tokens/s/device: 8687.815, total_weights: 196608, loss: 11.689
+completed step: 3, seconds: 5.402, TFLOP/s/device: 141.542, Tokens/s/device: 9098.189, total_weights: 196608, loss: 11.379
+completed step: 4, seconds: 5.669, TFLOP/s/device: 134.884, Tokens/s/device: 8670.207, total_weights: 196608, loss: 11.110
+completed step: 5, seconds: 5.668, TFLOP/s/device: 134.909, Tokens/s/device: 8671.794, total_weights: 196608, loss: 10.879
+completed step: 6, seconds: 5.668, TFLOP/s/device: 134.914, Tokens/s/device: 8672.153, total_weights: 196608, loss: 10.688
+completed step: 7, seconds: 5.669, TFLOP/s/device: 134.882, Tokens/s/device: 8670.101, total_weights: 196608, loss: 10.542
+completed step: 8, seconds: 5.668, TFLOP/s/device: 134.911, Tokens/s/device: 8671.946, total_weights: 196608, loss: 10.440
+completed step: 9, seconds: 5.667, TFLOP/s/device: 134.924, Tokens/s/device: 8672.758, total_weights: 196608, loss: 10.374
 ```
 
 Before we dive deep here, recall a few things from previous sections:
-- $\text{max target length} = 2048$, $\text{per device batch size} = 1$
-- $\text{model tflop per device} \approx 31.86$ (rounded), $\text{number of devices} = 4$
+- $\text{max target length} = 2048$, $\text{per device batch size} = 24$
+- $\text{model tflop per device} \approx 764.67$ (rounded), $\text{number of devices} = 4$
 
 
 ### 4.1 Performance Metrics
 
 For the performance indicators, they fluctuate at the beginning, and become stable towards the end. Therefore, we usually read those from the last step. Let's take a closer look at Step 9.
 ```
-completed step: 9, seconds: 1.012, TFLOP/s/device: 31.496, Tokens/s/device: 2024.558, total_weights: 8192, loss: 5.989
+completed step: 9, seconds: 5.667, TFLOP/s/device: 134.924, Tokens/s/device: 8672.758, total_weights: 196608, loss: 10.374
 ```
-As shown in `seconds: 1.012`, $\text{measured step time in seconds} \approx 1.012$ (rounded).
+As shown in `seconds: 5.667`, $\text{measured step time in seconds} \approx 5.667$ (rounded).
 
 **TFLOP Per Second Per device**
 
@@ -221,12 +219,12 @@ As shown in `seconds: 1.012`, $\text{measured step time in seconds} \approx 1.01
 
 $$\text{tflop/s/device} = \frac{\text{model tflop per device}}{\text{measured step time in seconds}}$$
 
-- Here we have `TFLOP/s/device: 31.496`. Let's try to verify manually: $31.86 /1.012 = 31.482$. Not exactly same but close, since the both tflop and time are rounded in log.
+- Here we have `TFLOP/s/device: 134.924`. Let's try to verify manually: $764.67 / 5.667 = 134.934$. Not exactly same but close, since the both tflop and time are rounded in log.
 - Further, we can calculate **Model FLOPs Utilization (MFU)** from this:
   
 $$\text{MFU} = \frac{\text{tflop/s/device}}{\text{peak hardware tflop/s}}$$
   
-  For TPU v5p, $\text{peak hardware tflop/s}=459$. Thus, $31.496 / 459 = 6.86\%$.
+  For TPU v5p, $\text{peak hardware tflop/s}=459$. Thus, $134.924 / 459 = 29.40\%$.
 
 **Tokens Per Second Per Device (throughput)**
 
@@ -238,7 +236,7 @@ $$\text{token/s/device} = \frac{\text{number of tokens per device}}{\text{measur
 
 $$\text{number of tokens per device} = \text{per device batch size} \times \text{max target length}$$
 
-- Here we have `Tokens/s/device: 2024.558`. Let's try to verify manually: $1 \times 2048 /1.012 = 2023.715$. Not exactly same but close, since the time is rounded in log.
+- Here we have `Tokens/s/device: 8672.758`. Let's try to verify manually: $24 \times 2048 / 5.667 = 8673.372$. Not exactly same but close, since the time is rounded in log.
 
 
 ### 4.2 Learning Metrics
@@ -246,10 +244,10 @@ $$\text{number of tokens per device} = \text{per device batch size} \times \text
 **Loss**. The loss is the key indicator of learning progress, which should decrease over time steps. Ideally, we want it to converge to a small value.
 
 **Total Weights**. When discussing the throughput, we have $\text{number of tokens} = \text{per device batch size} \times \text{max target length} \times \text{number of device}$. In data preprocessing, for each sentence, we truncate or pad to max target length. The pad tokens are meaningless and the loss are calculated based on the nonpad tokens. Thus, we monitor $\text{number of nonpad tokens}$, which is shown as [total weights](https://github.com/AI-Hypercomputer/maxtext/blob/f82ce194c490d668b14574a072a0a630c27bbd6e/MaxText/train.py#L307).
-- Here we see `total_weights: 8192` for all steps. This is because we are using `dataset_type=synthetic`, where all sentences are generated with length of `max_target_length=2048`. As a result, there are no padded tokens and total weights = number of tokens. 
-- However, in real dataset, sentences can have variable lengths and total weights < number of tokens. For example, we can set `dataset_type=tfds dataset_path=gs://maxtext-dataset dataset_name='c4/en:3.0.1'`, and will see total weights is smaller than 8192:
+- Here we see `total_weights: 196608` for all steps. This is because we are using `dataset_type=synthetic`, where all sentences are generated with length of `max_target_length=2048`. As a result, there are no padded tokens and total weights = number of tokens. 
+- However, in real dataset, sentences can have variable lengths and total weights < number of tokens. For example, we can set `dataset_type=tfds dataset_path=gs://maxtext-dataset dataset_name='c4/en:3.0.1'`, and will see total weights is smaller than 196608:
   ```
-  completed step: 8, seconds: 0.983, TFLOP/s/device: 32.418, Tokens/s/device: 2083.764, total_weights: 7805, loss: 9.607
-  completed step: 9, seconds: 0.983, TFLOP/s/device: 32.397, Tokens/s/device: 2082.441, total_weights: 7100, loss: 9.794
+  completed step: 8, seconds: 5.670, TFLOP/s/device: 134.856, Tokens/s/device: 8668.393, total_weights: 163259, loss: 9.596
+  completed step: 9, seconds: 5.669, TFLOP/s/device: 134.884, Tokens/s/device: 8670.184, total_weights: 155934, loss: 9.580
   ```
 - For better convergence, we want to have large total weights. For example, MaxText allows for [packing](https://github.com/AI-Hypercomputer/maxtext/blob/f82ce194c490d668b14574a072a0a630c27bbd6e/MaxText/sequence_packing.py#L39) multiple short sequences into one. This is enabled by default with `packing=True` in [base.yml](https://github.com/AI-Hypercomputer/maxtext/blob/eff346c028092c4f4fd421e5c5343308def5de5a/MaxText/configs/base.yml#L454).
